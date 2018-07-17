@@ -97,19 +97,20 @@ int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) 
     return child - (char*)tree_node;
 }
 
-int device_tree_fix_sizes(DeviceTreeNode* tree_node) {
+int device_tree_fix_sizes(DeviceTreeNode* tree_node, uint32_t* props_fixed) {
     DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
 
     for (int i = 0; i < tree_node->nProperties; i++) {
         if (property->length & 0x80000000) {
             property->length = property->length & 0x7fffffff;
+            *props_fixed += 1;
         }
         property = (DeviceTreeNodeProperty*)((char*)property + ((property->length + 3) & -4) + sizeof(*property));
     }
 
     char* child = (char*)property;
     for (int i = 0; i < tree_node->nChildren; i++) {
-        child += device_tree_fix_sizes((DeviceTreeNode*)child);
+        child += device_tree_fix_sizes((DeviceTreeNode*)child, props_fixed);
     }
 
     return child - (char*)tree_node;
@@ -211,7 +212,9 @@ int main(int argc, char* argv[]) {
     if (is_viewing) {
         device_tree_view(root_node, view_hex, 0);
     } else if (is_fixing_sizes) {
-        device_tree_fix_sizes(root_node);
+        uint32_t props_fixed = 0;
+        device_tree_fix_sizes(root_node, &props_fixed);
+        printf("Fixed %d length field%s\n", props_fixed, props_fixed == 1 ? "" : "s");
     }
 
     munmap(mapped_file, file_size);
