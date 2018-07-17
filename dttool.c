@@ -57,7 +57,7 @@ void print_hex_view(uint32_t* mem, uint32_t size) {
 }
 
 // Returns how much we have travelled
-int device_tree_view(DeviceTreeNode* tree_node, int tree_level) {
+int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
     if (tree_level == 0) {
         printf("root:\n");
     }
@@ -72,11 +72,11 @@ int device_tree_view(DeviceTreeNode* tree_node, int tree_level) {
         char* value = (void*)property + sizeof(*property);
 
         printf("(%d bytes) %s = ", size, name);
-        if (is_string(value)) {
-            printf("%s\n", value);
-        } else {
+        if (force_hex || !is_string(value)) {
             print_hex_view((uint32_t*)value, size);
             printf("\n");
+        } else {
+            printf("%s\n", value);
         }
 
         property = (DeviceTreeNodeProperty*)((char*)property + ((property->length + 3) & -4) + sizeof(*property));
@@ -87,7 +87,7 @@ int device_tree_view(DeviceTreeNode* tree_node, int tree_level) {
         print_indents(tree_level);
         printf("child[%d]:\n", i);
 
-        child += device_tree_view((DeviceTreeNode*)child, tree_level + 1);
+        child += device_tree_view((DeviceTreeNode*)child, force_hex, tree_level + 1);
     }
 
     return child - (char*)tree_node;
@@ -106,13 +106,14 @@ bool file_exist(char *filename, int* file_size) {
 
 
 void print_usage() {
-    printf("dttool - a tool for viewing and manipulating iOS DeviceTree files\n");
+    printf("dttool - a tool for viewing and manipulating iOS DeviceTree files (https://github.com/ninjaprawn/dttool)\n");
     printf("Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c\n");
     printf("\n");
-    printf("Usage: dtool [options] <file_name>\n");
+    printf("Usage: dtool [operation] [modifiers] <file_name>\n");
     printf("\n");
-    printf("Options:\n");
-    printf("\t--view\tOutputs the DeviceTree file in a readable format\n");
+    printf("Operations (modifiers are prefixed by --):\n");
+    printf("\t-view\tOutputs the DeviceTree file in a readable format\n");
+    printf("\t--hex\tForce outputs all values as hex values\n");
     printf("\n");
     printf("Thanks to Jonathan Levin whose code was used briefly as a reference (http://www.newosxbook.com/src.jl?tree=listings&file=6-bonus.c)\n");
 }
@@ -132,19 +133,31 @@ int main(int argc, char* argv[]) {
     }
 
     bool is_viewing = 0;
-
-    for (int i = 1; i < argc-1; i++) {
-        if (!strcmp(argv[i], "--view")) {
-            is_viewing = 1;
-        } else {
-            printf("Invalid option provided: \"%s\"\n", argv[i]);
-            return 2;
-        }
-    }
+    bool view_hex = 0;
 
     if (argc == 2) {
-        printf("[warning] No options provided. Using --view\n");
+        printf("[warning] No options provided. Using -view\n");
         is_viewing = 1;
+    } else {
+        if (strncmp(argv[1], "--", 2) == 0 || strncmp(argv[1], "-", 1) != 0) {
+            printf("First argument is not an operation! Run \"%s\" to view possible operations\n", argv[0]);
+            return 1;
+        }
+
+        if (!strcmp(argv[1], "-view")) {
+            is_viewing = 1;
+            for (int i = 2; i < argc - 1; i++) {
+                if (!strcmp(argv[i], "--hex")) {
+                    view_hex = 1;
+                } else {
+                    printf("Unknown modifier \"%s\" for viewing. Run \"%s\" to view possible modifiers\n", argv[i], argv[0]);
+                    return 1;
+                }
+            }
+        } else {
+            printf("Unknown operation \"%s\". Run \"%s\" to view possible operations\n", argv[1], argv[0]);
+            return 1;
+        }
     }
 
     if (file_size == -1 || file_size == 0) {
@@ -168,7 +181,7 @@ int main(int argc, char* argv[]) {
     printf("Using a DeviceTree with %d properties and %d children\n", root_node->nProperties, root_node->nChildren);
 
     if (is_viewing) {
-        device_tree_view(root_node, 0);
+        device_tree_view(root_node, view_hex, 0);
     }
 
     munmap(mapped_file, file_size);
