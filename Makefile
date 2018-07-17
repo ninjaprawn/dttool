@@ -1,9 +1,9 @@
 CC=gcc
 
-all: dttool
+all: clean dttool
 
 dttool:
 	$(CC) dttool.c -o dttool
 
 clean:
-	rm dttool
+	rm -f dttool

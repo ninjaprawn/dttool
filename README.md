@@ -20,5 +20,7 @@ Operations (modifiers are prefixed by --):
 	-view	Outputs the DeviceTree file in a readable format
 	--hex	Force outputs all values as hex values
 
+	-fix-sizes	Fixes the property size fields that have their upper bit set
+
 Thanks to Jonathan Levin whose code was used briefly as a reference (http://www.newosxbook.com/src.jl?tree=listings&file=6-bonus.c)
 ```

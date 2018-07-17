@@ -69,6 +69,10 @@ int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) 
 
         char* name = property->name;
         uint32_t size = property->length;
+        if (size & 0x80000000) {
+            printf("Found a bad size!\n");
+            size = size & 0x7fffffff;
+        }
         char* value = (void*)property + sizeof(*property);
 
         printf("(%d bytes) %s = ", size, name);
@@ -79,7 +83,7 @@ int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) 
             printf("%s\n", value);
         }
 
-        property = (DeviceTreeNodeProperty*)((char*)property + ((property->length + 3) & -4) + sizeof(*property));
+        property = (DeviceTreeNodeProperty*)((char*)property + ((size + 3) & -4) + sizeof(*property));
     }
 
     char* child = (char*)property;
@@ -88,6 +92,24 @@ int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) 
         printf("child[%d]:\n", i);
 
         child += device_tree_view((DeviceTreeNode*)child, force_hex, tree_level + 1);
+    }
+
+    return child - (char*)tree_node;
+}
+
+int device_tree_fix_sizes(DeviceTreeNode* tree_node) {
+    DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
+
+    for (int i = 0; i < tree_node->nProperties; i++) {
+        if (property->length & 0x80000000) {
+            property->length = property->length & 0x7fffffff;
+        }
+        property = (DeviceTreeNodeProperty*)((char*)property + ((property->length + 3) & -4) + sizeof(*property));
+    }
+
+    char* child = (char*)property;
+    for (int i = 0; i < tree_node->nChildren; i++) {
+        child += device_tree_fix_sizes((DeviceTreeNode*)child);
     }
 
     return child - (char*)tree_node;
@@ -115,6 +137,8 @@ void print_usage() {
     printf("\t-view\tOutputs the DeviceTree file in a readable format\n");
     printf("\t--hex\tForce outputs all values as hex values\n");
     printf("\n");
+    printf("\t-fix-sizes\tFixes the property size fields that have their upper bit set\n");
+    printf("\n");
     printf("Thanks to Jonathan Levin whose code was used briefly as a reference (http://www.newosxbook.com/src.jl?tree=listings&file=6-bonus.c)\n");
 }
 
@@ -135,6 +159,8 @@ int main(int argc, char* argv[]) {
     bool is_viewing = 0;
     bool view_hex = 0;
 
+    bool is_fixing_sizes = 0;
+
     if (argc == 2) {
         printf("[warning] No options provided. Using -view\n");
         is_viewing = 1;
@@ -154,6 +180,8 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
             }
+        } else if (!strcmp(argv[1], "-fix-sizes")) {
+            is_fixing_sizes = 1;
         } else {
             printf("Unknown operation \"%s\". Run \"%s\" to view possible operations\n", argv[1], argv[0]);
             return 1;
@@ -182,6 +210,8 @@ int main(int argc, char* argv[]) {
 
     if (is_viewing) {
         device_tree_view(root_node, view_hex, 0);
+    } else if (is_fixing_sizes) {
+        device_tree_fix_sizes(root_node);
     }
 
     munmap(mapped_file, file_size);
