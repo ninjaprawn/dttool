@@ -14,13 +14,15 @@ Tested on an extracted `DeviceTree.n56ap.im4p` from iOS 12 beta 1.
 dttool - a tool for viewing and manipulating iOS DeviceTree files (https://github.com/ninjaprawn/dttool)
 Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c
 
-Usage: dtool [operation] [modifiers] <file_name>
+Usage: dtool <operation> [modifiers] <file_name>
 
 Operations (modifiers are prefixed by --):
 	-view	Outputs the DeviceTree file in a readable format
 	--hex	Force outputs all values as hex values
 
 	-fix-sizes	Fixes the property size fields that have their upper bit set
+
+	-qemu	Patches the device tree for QEMU emulation
 
 Thanks to Jonathan Levin whose code was used briefly as a reference (http://www.newosxbook.com/src.jl?tree=listings&file=6-bonus.c)
 ```
