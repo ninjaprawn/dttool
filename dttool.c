@@ -70,7 +70,6 @@ int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) 
         char* name = property->name;
         uint32_t size = property->length;
         if (size & 0x80000000) {
-            printf("Found a bad size!\n");
             size = size & 0x7fffffff;
         }
         char* value = (void*)property + sizeof(*property);
@@ -116,6 +115,39 @@ int device_tree_fix_sizes(DeviceTreeNode* tree_node, uint32_t* props_fixed) {
     return child - (char*)tree_node;
 }
 
+int device_tree_qemu_patch(DeviceTreeNode* tree_node) {
+    DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
+
+    for (int i = 0; i < tree_node->nProperties; i++) {
+        char* name = property->name;
+        uint32_t size = property->length;
+        if (size & 0x80000000) {
+            size = size & 0x7fffffff;
+        }
+        char* value = (void*)property + sizeof(*property);
+
+        if (!strcmp(name, "timebase-frequency")) {
+            uint32_t* int_vals = (uint32_t*)value;
+            int_vals[0] = 0x16e3600; // for t7000
+        } else if (!strcmp(name, "random-seed")) {
+            uint32_t* int_vals = (uint32_t*)value;
+            int_vals[0] = 0xdeadf00d;
+        } else if (!strcmp(name, "firmware-version")) {
+            memset(value, 0, size);
+            strcat(value, "QEMU+XNU");
+        }
+
+        property = (DeviceTreeNodeProperty*)((char*)property + ((size + 3) & -4) + sizeof(*property));
+    }
+
+    char* child = (char*)property;
+    for (int i = 0; i < tree_node->nChildren; i++) {
+        child += device_tree_qemu_patch((DeviceTreeNode*)child);
+    }
+
+    return child - (char*)tree_node;
+}
+
 bool file_exist(char *filename, int* file_size) {
     struct stat buffer;
     int ret = stat(filename, &buffer);
@@ -132,13 +164,15 @@ void print_usage() {
     printf("dttool - a tool for viewing and manipulating iOS DeviceTree files (https://github.com/ninjaprawn/dttool)\n");
     printf("Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c\n");
     printf("\n");
-    printf("Usage: dtool [operation] [modifiers] <file_name>\n");
+    printf("Usage: dtool <operation> [modifiers] <file_name>\n");
     printf("\n");
     printf("Operations (modifiers are prefixed by --):\n");
     printf("\t-view\tOutputs the DeviceTree file in a readable format\n");
     printf("\t--hex\tForce outputs all values as hex values\n");
     printf("\n");
     printf("\t-fix-sizes\tFixes the property size fields that have their upper bit set\n");
+    printf("\n");
+    printf("\t-qemu\tPatches the device tree for QEMU emulation\n");
     printf("\n");
     printf("Thanks to Jonathan Levin whose code was used briefly as a reference (http://www.newosxbook.com/src.jl?tree=listings&file=6-bonus.c)\n");
 }
@@ -162,6 +196,8 @@ int main(int argc, char* argv[]) {
 
     bool is_fixing_sizes = 0;
 
+    bool is_qemu = 0;
+
     if (argc == 2) {
         printf("[warning] No options provided. Using -view\n");
         is_viewing = 1;
@@ -183,6 +219,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (!strcmp(argv[1], "-fix-sizes")) {
             is_fixing_sizes = 1;
+        } else if (!strcmp(argv[1], "-qemu")) {
+            is_qemu = 1;
         } else {
             printf("Unknown operation \"%s\". Run \"%s\" to view possible operations\n", argv[1], argv[0]);
             return 1;
@@ -215,6 +253,11 @@ int main(int argc, char* argv[]) {
         uint32_t props_fixed = 0;
         device_tree_fix_sizes(root_node, &props_fixed);
         printf("Fixed %d length field%s\n", props_fixed, props_fixed == 1 ? "" : "s");
+    } else if (is_qemu) {
+        uint32_t props_fixed = 0;
+        device_tree_fix_sizes(root_node, &props_fixed);
+        printf("Fixed %d length field%s\n", props_fixed, props_fixed == 1 ? "" : "s");
+        device_tree_qemu_patch(root_node);
     }
 
     munmap(mapped_file, file_size);
