@@ -132,6 +132,8 @@ int device_tree_qemu_patch(DeviceTreeNode* tree_node) {
         } else if (!strcmp(name, "random-seed")) {
             uint32_t* int_vals = (uint32_t*)value;
             int_vals[0] = 0xdeadf00d;
+            int_vals[1] = 0xcafebabe;
+            int_vals[2] = 0xfeedface;
         } else if (!strcmp(name, "firmware-version")) {
             memset(value, 0, size);
             strcat(value, "QEMU+XNU");
