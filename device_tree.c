@@ -60,6 +60,10 @@ DeviceTreeNode* device_tree_get_child(DeviceTreeNode* node, char* child_name) {
 }
 
 DeviceTreeNode* device_tree_lookup_entry(DeviceTreeNode* node, char* path) {
+    if (path == NULL) {
+        return NULL;
+    }
+
     if (path[0] == '/') {
         path++;
     }

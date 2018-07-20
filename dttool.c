@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
         .force_hex = 0,
         .list_children = 0,
         .no_children = 0,
-        .path = NULL,
+        .path = "/",
     };
 
     bool is_fixing_sizes = 0;
