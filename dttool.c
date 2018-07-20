@@ -56,8 +56,15 @@ void print_hex_view(uint32_t* mem, uint32_t size) {
     }
 }
 
+typedef struct dttool_view_flags {
+    bool force_hex;
+    bool list_children;
+    bool no_children;
+    char* path;
+} dttool_view_flags;
+
 // Returns how much we have travelled
-void dttool_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
+void dttool_view(DeviceTreeNode* tree_node, dttool_view_flags* flags, int tree_level) {
     printf("%s:\n", device_tree_get_property(tree_node, "name")->value);
 
     DeviceTreeProperty* property = device_tree_first_property(tree_node);
@@ -69,7 +76,7 @@ void dttool_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
         uint32_t size = property->length & 0x7fffffff;
 
         printf("(%d bytes) %s = ", size, name);
-        if (force_hex || !is_string(property->value)) {
+        if (flags->force_hex || !is_string(property->value)) {
             print_hex_view((uint32_t*)property->value, size);
             printf("\n");
         } else {
@@ -79,10 +86,23 @@ void dttool_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
         property = device_tree_next_property(property);
     }
 
+    if (flags->no_children) {
+        return;
+    }
+
     DeviceTreeNode* child = device_tree_first_child(tree_node);
     for (int i = 0; i < tree_node->nChildren; i++) {
         print_indents(tree_level);
-        dttool_view(child, force_hex, tree_level + 1);
+        dttool_view(child, flags, tree_level + 1);
+        child = device_tree_next_child(child);
+    }
+}
+
+void dttool_list_children(DeviceTreeNode* tree_node) {
+    printf("%s children:\n", device_tree_get_property(tree_node, "name")->value);
+    DeviceTreeNode* child = device_tree_first_child(tree_node);
+    for (int i = 0; i < tree_node->nChildren; i++) {
+        printf("\t%s\n", device_tree_get_property(child, "name")->value);
         child = device_tree_next_child(child);
     }
 }
@@ -125,7 +145,7 @@ void dttool_qemu_patch(DeviceTreeNode* tree_node) {
     strcat(firmware_version, "QEMU+XNU");
 
     uint32_t* debug_enabled = (uint32_t*)device_tree_get_property(chosen, "debug-enabled")->value;
-    debug_enabled[0] = 0x0;
+    debug_enabled[0] = 0x1;
 }
 
 bool file_exist(char *filename, int* file_size) {
@@ -147,8 +167,11 @@ void print_usage() {
     printf("Usage: dtool <operation> [modifiers] <file_name>\n");
     printf("\n");
     printf("Operations (modifiers are prefixed by --):\n");
-    printf("\t-view\tOutputs the DeviceTree file in a readable format\n");
+    printf("\t-view\tPresent the DeviceTree file in a readable format\n");
     printf("\t--hex\tForce outputs all values as hex values\n");
+    printf("\t--list-children\tOnly view a list of children of a node\n");
+    printf("\t--no-children\tOnly view the properties of a node\n");
+    printf("\t--path=<path>\tOnly view a specific node of the device tree\n");
     printf("\n");
     printf("\t-fix-sizes\tFixes the property size fields that have their upper bit set\n");
     printf("\n");
@@ -172,7 +195,12 @@ int main(int argc, char* argv[]) {
     }
 
     bool is_viewing = 0;
-    bool view_hex = 0;
+    dttool_view_flags view_flags = {
+        .force_hex = 0,
+        .list_children = 0,
+        .no_children = 0,
+        .path = NULL,
+    };
 
     bool is_fixing_sizes = 0;
 
@@ -191,7 +219,23 @@ int main(int argc, char* argv[]) {
             is_viewing = 1;
             for (int i = 2; i < argc - 1; i++) {
                 if (!strcmp(argv[i], "--hex")) {
-                    view_hex = 1;
+                    view_flags.force_hex = 1;
+                } else if (!strcmp(argv[i], "--no-children")) {
+                    view_flags.no_children = 1;
+                } else if (!strcmp(argv[i], "--list-children")) {
+                    view_flags.list_children = 1;
+                } else if (!strncmp(argv[i], "--path", 6)) {
+                    if (strlen(argv[i]) > 6) {
+                        if (argv[i][6] == '=' && strlen(argv[i]) > 7) {
+                            view_flags.path = argv[i] + 7;
+                        } else {
+                            printf("An assignment is expected when using the \"--path\" modifier. Run \"%s\" to view how to use this modifier\n", argv[0]);
+                            return 1;
+                        }
+                    } else {
+                        printf("No path specified\n");
+                        return 1;
+                    }
                 } else {
                     printf("Unknown modifier \"%s\" for viewing. Run \"%s\" to view possible modifiers\n", argv[i], argv[0]);
                     return 1;
@@ -229,7 +273,16 @@ int main(int argc, char* argv[]) {
 
 
     if (is_viewing) {
-        dttool_view(root_node, view_hex, 0);
+        DeviceTreeNode* node = device_tree_lookup_entry(root_node, view_flags.path);
+        if (node == NULL) {
+            printf("Node at path \"%s\" does not exist\n", view_flags.path);
+        } else {
+            if (view_flags.list_children) {
+                dttool_list_children(node);
+            } else {
+                dttool_view(node, &view_flags, 0);
+            }
+        }
     } else if (is_fixing_sizes) {
         uint32_t props_fixed = 0;
         dttool_fix_sizes(root_node, &props_fixed);

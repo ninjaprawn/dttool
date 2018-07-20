@@ -17,8 +17,11 @@ Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c
 Usage: dtool <operation> [modifiers] <file_name>
 
 Operations (modifiers are prefixed by --):
-	-view	Outputs the DeviceTree file in a readable format
+	-view	Present the DeviceTree file in a readable format
 	--hex	Force outputs all values as hex values
+	--list-children	Only view a list of children of a node
+	--no-children	Only view the properties of a node
+	--path=<path>	Only view a specific node of the device tree
 
 	-fix-sizes	Fixes the property size fields that have their upper bit set
 
