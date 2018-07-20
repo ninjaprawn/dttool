@@ -57,97 +57,75 @@ void print_hex_view(uint32_t* mem, uint32_t size) {
 }
 
 // Returns how much we have travelled
-int device_tree_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
-    if (tree_level == 0) {
-        printf("root:\n");
-    }
+void dttool_view(DeviceTreeNode* tree_node, bool force_hex, int tree_level) {
+    printf("%s:\n", device_tree_get_property(tree_node, "name")->value);
 
-    DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
+    DeviceTreeProperty* property = device_tree_first_property(tree_node);
 
     for (int i = 0; i < tree_node->nProperties; i++) {
         print_indents(tree_level);
 
         char* name = property->name;
-        uint32_t size = property->length;
-        if (size & 0x80000000) {
-            size = size & 0x7fffffff;
-        }
-        char* value = (void*)property + sizeof(*property);
+        uint32_t size = property->length & 0x7fffffff;
 
         printf("(%d bytes) %s = ", size, name);
-        if (force_hex || !is_string(value)) {
-            print_hex_view((uint32_t*)value, size);
+        if (force_hex || !is_string(property->value)) {
+            print_hex_view((uint32_t*)property->value, size);
             printf("\n");
         } else {
-            printf("%s\n", value);
+            printf("%s\n", property->value);
         }
 
-        property = (DeviceTreeNodeProperty*)((char*)property + ((size + 3) & -4) + sizeof(*property));
+        property = device_tree_next_property(property);
     }
 
-    char* child = (char*)property;
+    DeviceTreeNode* child = device_tree_first_child(tree_node);
     for (int i = 0; i < tree_node->nChildren; i++) {
         print_indents(tree_level);
-        printf("child[%d]:\n", i);
-
-        child += device_tree_view((DeviceTreeNode*)child, force_hex, tree_level + 1);
+        dttool_view(child, force_hex, tree_level + 1);
+        child = device_tree_next_child(child);
     }
-
-    return child - (char*)tree_node;
 }
 
-int device_tree_fix_sizes(DeviceTreeNode* tree_node, uint32_t* props_fixed) {
-    DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
+void dttool_fix_sizes(DeviceTreeNode* tree_node, uint32_t* props_fixed) {
+    DeviceTreeProperty* property = device_tree_first_property(tree_node);
 
     for (int i = 0; i < tree_node->nProperties; i++) {
         if (property->length & 0x80000000) {
             property->length = property->length & 0x7fffffff;
             *props_fixed += 1;
         }
-        property = (DeviceTreeNodeProperty*)((char*)property + ((property->length + 3) & -4) + sizeof(*property));
+
+        property = device_tree_next_property(property);
     }
 
-    char* child = (char*)property;
+    DeviceTreeNode* child = device_tree_first_child(tree_node);
     for (int i = 0; i < tree_node->nChildren; i++) {
-        child += device_tree_fix_sizes((DeviceTreeNode*)child, props_fixed);
+        dttool_fix_sizes(child, props_fixed);
+        child = device_tree_next_child(child);
     }
-
-    return child - (char*)tree_node;
 }
 
-int device_tree_qemu_patch(DeviceTreeNode* tree_node) {
-    DeviceTreeNodeProperty* property = (DeviceTreeNodeProperty*)((char*)tree_node + sizeof(tree_node));
+void dttool_qemu_patch(DeviceTreeNode* tree_node) {
+    DeviceTreeNode* cpu0 = device_tree_lookup_entry(tree_node, "/cpus/cpu0");
 
-    for (int i = 0; i < tree_node->nProperties; i++) {
-        char* name = property->name;
-        uint32_t size = property->length;
-        if (size & 0x80000000) {
-            size = size & 0x7fffffff;
-        }
-        char* value = (void*)property + sizeof(*property);
+    uint32_t* timebase_freqeuncy = (uint32_t*)device_tree_get_property(cpu0, "timebase-frequency")->value;
+    timebase_freqeuncy[0] = 0x16e3600; // T7000 value
 
-        if (!strcmp(name, "timebase-frequency")) {
-            uint32_t* int_vals = (uint32_t*)value;
-            int_vals[0] = 0x16e3600; // for t7000
-        } else if (!strcmp(name, "random-seed")) {
-            uint32_t* int_vals = (uint32_t*)value;
-            int_vals[0] = 0xdeadf00d;
-            int_vals[1] = 0xcafebabe;
-            int_vals[2] = 0xfeedface;
-        } else if (!strcmp(name, "firmware-version")) {
-            memset(value, 0, size);
-            strcat(value, "QEMU+XNU");
-        }
 
-        property = (DeviceTreeNodeProperty*)((char*)property + ((size + 3) & -4) + sizeof(*property));
-    }
+    DeviceTreeNode* chosen = device_tree_lookup_entry(tree_node, "/chosen");
 
-    char* child = (char*)property;
-    for (int i = 0; i < tree_node->nChildren; i++) {
-        child += device_tree_qemu_patch((DeviceTreeNode*)child);
-    }
+    uint32_t* random_seed = (uint32_t*)device_tree_get_property(chosen, "random-seed")->value;
+    random_seed[0] = 0xdeadf00d;
+    random_seed[1] = 0xcafebabe;
+    random_seed[2] = 0xfeedface;
 
-    return child - (char*)tree_node;
+    char* firmware_version = device_tree_get_property(chosen, "firmware-version")->value;
+    memset(firmware_version, 0, device_tree_get_property(chosen, "firmware-version")->length);
+    strcat(firmware_version, "QEMU+XNU");
+
+    uint32_t* debug_enabled = (uint32_t*)device_tree_get_property(chosen, "debug-enabled")->value;
+    debug_enabled[0] = 0x0;
 }
 
 bool file_exist(char *filename, int* file_size) {
@@ -249,17 +227,18 @@ int main(int argc, char* argv[]) {
     DeviceTreeNode* root_node = (DeviceTreeNode*)mapped_file;
     printf("Using a DeviceTree with %d properties and %d children\n", root_node->nProperties, root_node->nChildren);
 
+
     if (is_viewing) {
-        device_tree_view(root_node, view_hex, 0);
+        dttool_view(root_node, view_hex, 0);
     } else if (is_fixing_sizes) {
         uint32_t props_fixed = 0;
-        device_tree_fix_sizes(root_node, &props_fixed);
+        dttool_fix_sizes(root_node, &props_fixed);
         printf("Fixed %d length field%s\n", props_fixed, props_fixed == 1 ? "" : "s");
     } else if (is_qemu) {
         uint32_t props_fixed = 0;
-        device_tree_fix_sizes(root_node, &props_fixed);
+        dttool_fix_sizes(root_node, &props_fixed);
         printf("Fixed %d length field%s\n", props_fixed, props_fixed == 1 ? "" : "s");
-        device_tree_qemu_patch(root_node);
+        dttool_qemu_patch(root_node);
     }
 
     munmap(mapped_file, file_size);
