@@ -145,7 +145,14 @@ void dttool_qemu_patch(DeviceTreeNode* tree_node) {
     strcat(firmware_version, "QEMU+XNU");
 
     uint32_t* debug_enabled = (uint32_t*)device_tree_get_property(chosen, "debug-enabled")->value;
-    debug_enabled[0] = 0x1;
+    debug_enabled[0] = 0x0;
+
+
+    DeviceTreeNode* pram = device_tree_lookup_entry(tree_node, "/pram");
+
+    uint64_t* regs = (uint64_t*)device_tree_get_property(pram, "reg")->value;
+    regs[0] = 0x83f6fb000;
+    regs[1] = 0x00080000;
 }
 
 bool file_exist(char *filename, int* file_size) {
@@ -164,7 +171,7 @@ void print_usage() {
     printf("dttool - a tool for viewing and manipulating iOS DeviceTree files (https://github.com/ninjaprawn/dttool)\n");
     printf("Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c\n");
     printf("\n");
-    printf("Usage: dtool <operation> [modifiers] <file_name>\n");
+    printf("Usage: dttool <operation> [modifiers] <file_name>\n");
     printf("\n");
     printf("Operations (modifiers are prefixed by --):\n");
     printf("\t-view\tPresent the DeviceTree file in a readable format\n");

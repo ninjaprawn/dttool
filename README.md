@@ -14,7 +14,7 @@ Tested on an extracted `DeviceTree.n56ap.im4p` from iOS 12 beta 1.
 dttool - a tool for viewing and manipulating iOS DeviceTree files (https://github.com/ninjaprawn/dttool)
 Created by @theninjaprawn. Based on xnu-4570.41.2/pexpert/gen/device_tree.c
 
-Usage: dtool <operation> [modifiers] <file_name>
+Usage: dttool <operation> [modifiers] <file_name>
 
 Operations (modifiers are prefixed by --):
 	-view	Present the DeviceTree file in a readable format
